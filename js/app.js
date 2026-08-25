@@ -4,6 +4,10 @@ import { fetchCalendarEvents, formatEventTime } from "./calendar.js";
 import { getPlanItems, addPlanItem, togglePlanItem, deletePlanItem } from "./planItems.js";
 import { listNotes, createNote, saveNote, deleteNote, togglePin } from "./notes.js";
 import {
+  listClients, createClient, updateClientField, deleteClient,
+  listClientUpdates, addClientUpdate,
+} from "./clients.js";
+import {
   listMoodboards, createMoodboard, deleteMoodboard, listMoodboardItems,
   uploadImageAndCreateItem, createTextItem, createShapeItem,
   updateItemPosition, updateItemContent, updateItemColor, deleteItem,
@@ -66,7 +70,7 @@ function greeting(name) {
 
 // ---------------- Navigation ----------------
 
-const views = ["today", "upcoming", "notes", "moodboards"];
+const views = ["today", "upcoming", "notes", "clients", "moodboards"];
 
 document.querySelectorAll(".nav button").forEach((btn) => {
   btn.addEventListener("click", () => switchView(btn.dataset.view));
@@ -90,6 +94,7 @@ function refreshActiveView() {
   if (activeView === "today") renderToday();
   if (activeView === "upcoming") renderUpcoming();
   if (activeView === "notes") renderNotes();
+  if (activeView === "clients") renderClients();
   if (activeView === "moodboards") renderMoodboards();
 }
 
@@ -317,6 +322,247 @@ document.getElementById("note-delete-btn").addEventListener("click", async () =>
   openNoteId = null;
   document.getElementById("note-editor-overlay").style.display = "none";
   renderNotes();
+});
+
+// ==================================================
+// CLIENTS VIEW
+// ==================================================
+
+let clientsCache = [];
+let openClientId = null;
+
+const CLIENT_FIELD_DEFS = [
+  { key: "email", label: "Email", kind: "email" },
+  { key: "phone", label: "Phone", kind: "phone" },
+  { key: "address", label: "Address", kind: "text" },
+  { key: "city", label: "City", kind: "text" },
+  { key: "state", label: "State", kind: "text" },
+  { key: "postal_code", label: "Postal code", kind: "text" },
+];
+
+async function renderClients() {
+  const list = document.getElementById("clients-list");
+  list.innerHTML = `<div class="empty-state">Loading…</div>`;
+  clientsCache = await listClients(currentUser.id);
+  renderClientsList(document.getElementById("client-search-input").value);
+}
+
+document.getElementById("client-search-input").addEventListener("input", (e) => {
+  renderClientsList(e.target.value);
+});
+
+function renderClientsList(query) {
+  const list = document.getElementById("clients-list");
+  const q = (query || "").trim().toLowerCase();
+
+  const filtered = !q
+    ? clientsCache
+    : clientsCache.filter((c) => {
+        const first = (c.first_name || "").toLowerCase();
+        const last = (c.last_name || "").toLowerCase();
+        const full = `${first} ${last}`.trim();
+        return (
+          first.includes(q) ||
+          last.includes(q) ||
+          full.includes(q) ||
+          String(c.client_number).includes(q)
+        );
+      });
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state">${
+      clientsCache.length ? "No clients match your search." : "No clients yet — add your first one."
+    }</div>`;
+    return;
+  }
+
+  list.innerHTML = "";
+  filtered.forEach((client) => {
+    const row = document.createElement("div");
+    row.className = "client-row";
+    row.innerHTML = `
+      <span class="client-row-id">#${client.client_number}</span>
+      <span class="client-row-name">${escapeHtml(client.first_name)} ${escapeHtml(client.last_name)}</span>
+    `;
+    row.addEventListener("click", () => openClientDetail(client.id));
+    list.appendChild(row);
+  });
+}
+
+document.getElementById("new-client-btn").addEventListener("click", () => {
+  const form = document.getElementById("new-client-form");
+  const showing = form.style.display !== "none";
+  form.style.display = showing ? "none" : "flex";
+  if (!showing) document.getElementById("new-client-first").focus();
+});
+
+document.getElementById("new-client-cancel").addEventListener("click", () => {
+  document.getElementById("new-client-form").style.display = "none";
+  document.getElementById("new-client-first").value = "";
+  document.getElementById("new-client-last").value = "";
+});
+
+async function submitNewClient() {
+  const firstInput = document.getElementById("new-client-first");
+  const lastInput = document.getElementById("new-client-last");
+  const first = firstInput.value.trim();
+  const last = lastInput.value.trim();
+  if (!first || !last) {
+    alert("Please enter both a first and last name.");
+    return;
+  }
+  const client = await createClient(currentUser.id, first, last);
+  if (client) {
+    clientsCache.push(client);
+    firstInput.value = "";
+    lastInput.value = "";
+    document.getElementById("new-client-form").style.display = "none";
+    renderClientsList(document.getElementById("client-search-input").value);
+  }
+}
+
+document.getElementById("new-client-save").addEventListener("click", submitNewClient);
+document.getElementById("new-client-first").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    document.getElementById("new-client-last").focus();
+  }
+});
+document.getElementById("new-client-last").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    submitNewClient();
+  }
+});
+
+async function openClientDetail(id) {
+  const client = clientsCache.find((c) => c.id === id);
+  if (!client) return;
+  openClientId = id;
+  document.getElementById("client-detail-name").textContent = `${client.first_name} ${client.last_name}`;
+  document.getElementById("client-detail-number").textContent = `Client #${client.client_number}`;
+  renderClientFields(client);
+  document.getElementById("client-update-input").value = "";
+  document.getElementById("client-detail-overlay").style.display = "flex";
+  await renderClientUpdates(id);
+}
+
+function closeClientDetail() {
+  openClientId = null;
+  document.getElementById("client-detail-overlay").style.display = "none";
+}
+
+document.getElementById("client-detail-close").addEventListener("click", closeClientDetail);
+document.getElementById("client-detail-overlay").addEventListener("click", (e) => {
+  if (e.target.id === "client-detail-overlay") closeClientDetail();
+});
+
+document.getElementById("client-delete-btn").addEventListener("click", async () => {
+  if (!openClientId) return;
+  const client = clientsCache.find((c) => c.id === openClientId);
+  if (!client) return;
+  if (!confirm(`Delete ${client.first_name} ${client.last_name}? This also removes their updates.`)) return;
+  await deleteClient(openClientId);
+  clientsCache = clientsCache.filter((c) => c.id !== openClientId);
+  closeClientDetail();
+  renderClientsList(document.getElementById("client-search-input").value);
+});
+
+function renderClientFields(client) {
+  const box = document.getElementById("client-detail-fields");
+  box.innerHTML = "";
+  CLIENT_FIELD_DEFS.forEach((def) => {
+    const row = document.createElement("div");
+    row.className = "client-field-row";
+    box.appendChild(row);
+    renderFieldView(row, client, def);
+  });
+}
+
+function renderFieldView(row, client, def) {
+  const value = client[def.key] || "";
+  let valueHtml;
+  if (!value) {
+    valueHtml = `<span class="client-field-empty">Not set</span>`;
+  } else if (def.kind === "email") {
+    const gmailUrl = "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(value);
+    valueHtml = `<a href="${gmailUrl}" target="_blank" rel="noopener" class="client-field-link">${escapeHtml(value)}</a>`;
+  } else if (def.kind === "phone") {
+    valueHtml = `<a href="tel:${encodeURIComponent(value)}" class="client-field-link">${escapeHtml(value)}</a>`;
+  } else {
+    valueHtml = `<span>${escapeHtml(value)}</span>`;
+  }
+  row.innerHTML = `
+    <div class="client-field-label">${def.label}</div>
+    <div class="client-field-value">${valueHtml}</div>
+    <button class="client-field-edit" title="Edit ${def.label}">✎</button>
+  `;
+  row.querySelector(".client-field-edit").addEventListener("click", () => renderFieldEdit(row, client, def));
+}
+
+function renderFieldEdit(row, client, def) {
+  row.innerHTML = `
+    <div class="client-field-label">${def.label}</div>
+    <input type="text" class="client-field-input" />
+    <button class="client-field-save">Save</button>
+  `;
+  const input = row.querySelector(".client-field-input");
+  input.value = client[def.key] || "";
+  input.focus();
+  input.select();
+
+  const save = async () => {
+    const newValue = input.value.trim();
+    client[def.key] = newValue;
+    await updateClientField(client.id, def.key, newValue);
+    renderFieldView(row, client, def);
+  };
+
+  row.querySelector(".client-field-save").addEventListener("click", save);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      save();
+    }
+    if (e.key === "Escape") renderFieldView(row, client, def);
+  });
+}
+
+async function renderClientUpdates(clientId) {
+  const box = document.getElementById("client-updates-list");
+  box.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const updates = await listClientUpdates(clientId);
+  if (!updates.length) {
+    box.innerHTML = `<div class="empty-state">No updates yet.</div>`;
+    return;
+  }
+  box.innerHTML = "";
+  updates.forEach((u) => {
+    const row = document.createElement("div");
+    row.className = "client-update-row";
+    row.innerHTML = `
+      <div class="client-update-meta">${new Date(u.created_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
+      <div class="client-update-body">${escapeHtml(u.body)}</div>
+    `;
+    box.appendChild(row);
+  });
+}
+
+async function sendClientUpdate() {
+  const input = document.getElementById("client-update-input");
+  const body = input.value.trim();
+  if (!body || !openClientId) return;
+  input.value = "";
+  await addClientUpdate(currentUser.id, openClientId, body);
+  await renderClientUpdates(openClientId);
+}
+
+document.getElementById("client-update-send").addEventListener("click", sendClientUpdate);
+document.getElementById("client-update-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    sendClientUpdate();
+  }
 });
 
 // ==================================================
