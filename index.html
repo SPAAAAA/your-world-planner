@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Your World Planner</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2224%22 fill=%22%23d97757%22/></svg>" />
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<!-- ===================== LOGIN SCREEN ===================== -->
+<div id="login-screen" class="login-screen" style="display:none;">
+  <div class="login-card">
+    <div class="mark"></div>
+    <h1>Your World Planner</h1>
+    <p>One clear view of today, what's coming up, your notes, and your moodboards.</p>
+    <button id="google-signin-btn" class="google-btn">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.98v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.66 9c0-.59.1-1.17.29-1.7V4.97H.98A9 9 0 0 0 0 9c0 1.45.35 2.83.98 4.03z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .98 4.97l2.97 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
+      Sign in with Google
+    </button>
+    <div id="config-warning" class="config-warning" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- ===================== APP SHELL ===================== -->
+<div id="app" style="display:none;">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark"></div>
+      <div class="name">Your World<br/>Planner</div>
+    </div>
+
+    <nav class="nav">
+      <button data-view="today" class="active"><span class="icon">☀</span> Today</button>
+      <button data-view="upcoming"><span class="icon">📅</span> Upcoming</button>
+      <button data-view="notes"><span class="icon">📝</span> Notes</button>
+      <button data-view="moodboards"><span class="icon">🎨</span> Moodboards</button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <img id="user-avatar" src="" alt="" />
+        <div class="who">
+          <div class="name" id="user-name">—</div>
+          <div class="email" id="user-email">—</div>
+        </div>
+      </div>
+      <button id="signout-btn" class="link-btn">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- TODAY -->
+    <section class="view active" id="view-today">
+      <div class="page-header">
+        <h1 id="today-heading">Today</h1>
+        <p>Your meetings and plans for today, all in one place.</p>
+      </div>
+
+      <div id="today-calendar-issue"></div>
+
+      <div class="section">
+        <h2 class="section-title">Schedule</h2>
+        <div class="card" id="today-events"></div>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title">Plan for today</h2>
+        <div class="card">
+          <div id="today-plan-items"></div>
+          <div class="add-row">
+            <input type="text" id="today-plan-input" placeholder="Add something to your day…" />
+            <button id="today-plan-add">Add</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- UPCOMING -->
+    <section class="view" id="view-upcoming">
+      <div class="page-header">
+        <h1>Upcoming</h1>
+        <p>What's ahead over the next two weeks.</p>
+      </div>
+      <div id="upcoming-calendar-issue"></div>
+      <div class="card" id="upcoming-list"></div>
+    </section>
+
+    <!-- NOTES -->
+    <section class="view" id="view-notes">
+      <div class="page-header">
+        <h1>Notes</h1>
+        <p>Jot things down and find them later.</p>
+      </div>
+      <div class="notes-toolbar">
+        <button class="primary-btn" id="new-note-btn">+ New note</button>
+      </div>
+      <div class="notes-grid" id="notes-grid"></div>
+    </section>
+
+    <!-- MOODBOARDS -->
+    <section class="view" id="view-moodboards">
+      <div class="page-header">
+        <h1>Moodboards</h1>
+        <p>Collect images and arrange them freely.</p>
+      </div>
+      <div class="moodboard-toolbar">
+        <div class="board-tabs" id="board-tabs"></div>
+        <button class="board-tab" id="new-board-btn">+ New board</button>
+        <label class="upload-btn">
+          ⬆ Add image
+          <input type="file" id="image-input" accept="image/*" multiple style="display:none;" />
+        </label>
+      </div>
+      <div class="board-canvas-wrap">
+        <div class="board-canvas" id="board-canvas">
+          <div class="empty-board-hint" id="empty-board-hint">Add an image to get started</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Note editor overlay -->
+<div class="note-editor-overlay" id="note-editor-overlay" style="display:none;">
+  <div class="note-editor">
+    <input type="text" class="title-input" id="note-title-input" placeholder="Title" />
+    <textarea id="note-content-input" placeholder="Write something…"></textarea>
+    <div class="editor-footer">
+      <button class="link-btn" id="note-delete-btn">Delete</button>
+      <button class="primary-btn" id="note-close-btn">Done</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
