@@ -7,7 +7,7 @@ import {
   listMoodboards, createMoodboard, deleteMoodboard, listMoodboardItems,
   uploadImageAndCreateItem, createTextItem, createShapeItem,
   updateItemPosition, updateItemContent, updateItemColor, deleteItem,
-} from "./moodboard.js";
+} from "./moodboard.js?v=2";
 
 // ---------------- Config gate ----------------
 
