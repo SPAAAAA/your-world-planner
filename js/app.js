@@ -4,8 +4,9 @@ import { fetchCalendarEvents, formatEventTime } from "./calendar.js";
 import { getPlanItems, addPlanItem, togglePlanItem, deletePlanItem } from "./planItems.js";
 import { listNotes, createNote, saveNote, deleteNote, togglePin } from "./notes.js";
 import {
-  listMoodboards, createMoodboard, listMoodboardItems,
-  uploadImageAndCreateItem, updateItemPosition, deleteItem,
+  listMoodboards, createMoodboard, deleteMoodboard, listMoodboardItems,
+  uploadImageAndCreateItem, createTextItem, createShapeItem,
+  updateItemPosition, updateItemContent, updateItemColor, deleteItem,
 } from "./moodboard.js";
 
 // ---------------- Config gate ----------------
@@ -345,11 +346,32 @@ function renderBoardTabs() {
   const tabs = document.getElementById("board-tabs");
   tabs.innerHTML = "";
   boardsCache.forEach((board) => {
-    const tab = document.createElement("button");
-    tab.className = "board-tab" + (board.id === activeBoardId ? " active" : "");
-    tab.textContent = board.name;
-    tab.addEventListener("click", () => {
+    const tab = document.createElement("div");
+    tab.className = "board-tab-item" + (board.id === activeBoardId ? " active" : "");
+    tab.innerHTML = `
+      <span class="board-tab-label">${escapeHtml(board.name)}</span>
+      <button class="board-tab-delete" title="Delete this moodboard">✕</button>
+    `;
+    tab.querySelector(".board-tab-label").addEventListener("click", () => {
       activeBoardId = board.id;
+      renderBoardTabs();
+      renderBoardCanvas();
+    });
+    tab.querySelector(".board-tab-delete").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${board.name}"? This removes everything on it.`)) return;
+      await deleteMoodboard(board.id);
+      boardsCache = boardsCache.filter((b) => b.id !== board.id);
+      if (activeBoardId === board.id) {
+        activeBoardId = boardsCache[0]?.id || null;
+      }
+      if (!boardsCache.length) {
+        const fresh = await createMoodboard(currentUser.id, "My moodboard");
+        if (fresh) {
+          boardsCache = [fresh];
+          activeBoardId = fresh.id;
+        }
+      }
       renderBoardTabs();
       renderBoardCanvas();
     });
@@ -381,6 +403,34 @@ document.getElementById("image-input").addEventListener("change", async (e) => {
   renderBoardCanvas();
 });
 
+function randomBoardPosition() {
+  return { x: 30 + Math.random() * 120, y: 30 + Math.random() * 80 };
+}
+
+document.getElementById("add-text-btn").addEventListener("click", async () => {
+  if (!activeBoardId) return;
+  const item = await createTextItem(currentUser.id, activeBoardId, randomBoardPosition());
+  if (item) renderBoardCanvas();
+});
+
+document.getElementById("add-box-btn").addEventListener("click", async () => {
+  if (!activeBoardId) return;
+  const item = await createShapeItem(currentUser.id, activeBoardId, "box", randomBoardPosition());
+  if (item) renderBoardCanvas();
+});
+
+document.getElementById("add-line-btn").addEventListener("click", async () => {
+  if (!activeBoardId) return;
+  const item = await createShapeItem(currentUser.id, activeBoardId, "line", randomBoardPosition());
+  if (item) renderBoardCanvas();
+});
+
+document.getElementById("add-arrow-btn").addEventListener("click", async () => {
+  if (!activeBoardId) return;
+  const item = await createShapeItem(currentUser.id, activeBoardId, "arrow", randomBoardPosition());
+  if (item) renderBoardCanvas();
+});
+
 async function renderBoardCanvas() {
   const canvas = document.getElementById("board-canvas");
   canvas.innerHTML = "";
@@ -397,16 +447,29 @@ async function renderBoardCanvas() {
 }
 
 function mountMoodboardItem(canvas, item) {
+  const type = item.item_type || "image";
+  const color = item.color || "#d97757";
+
   const el = document.createElement("div");
-  el.className = "moodboard-item";
+  el.className = "moodboard-item item-" + type;
   el.style.left = item.x + "px";
   el.style.top = item.y + "px";
   el.style.width = item.width + "px";
   el.style.height = item.height + "px";
   el.style.transform = `rotate(${item.rotation || 0}deg)`;
   el.style.zIndex = item.z_index || 1;
+  el.style.setProperty("--item-color", color);
+
+  let inner = "";
+  if (type === "image") {
+    inner = `<img src="${item.url}" alt="" draggable="false" />`;
+  } else if (type === "text") {
+    inner = `<div class="text-content" style="color:${color}">${escapeHtml(item.content || "Double-click to edit")}</div>`;
+  }
   el.innerHTML = `
-    <img src="${item.url}" alt="" draggable="false" />
+    ${inner}
+    <button class="item-color" title="Change color"></button>
+    <input type="color" class="color-input" value="${toHexColor(color)}" />
     <button class="item-remove">✕</button>
     <div class="resize-handle"></div>
   `;
@@ -418,13 +481,60 @@ function mountMoodboardItem(canvas, item) {
     el.remove();
   });
 
-  el.addEventListener("pointerdown", (e) => {
+  const colorBtn = el.querySelector(".item-color");
+  const colorInput = el.querySelector(".color-input");
+  colorBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    colorInput.click();
+  });
+  colorInput.addEventListener("click", (e) => e.stopPropagation());
+  colorInput.addEventListener("input", (e) => {
+    const newColor = e.target.value;
+    el.style.setProperty("--item-color", newColor);
+    const textEl = el.querySelector(".text-content");
+    if (textEl) textEl.style.color = newColor;
+  });
+  colorInput.addEventListener("change", async (e) => {
+    await updateItemColor(item.id, e.target.value);
+  });
+
+  el.addEventListener("pointerdown", () => {
     document.querySelectorAll(".moodboard-item.selected").forEach((n) => n.classList.remove("selected"));
     el.classList.add("selected");
   });
 
+  if (type === "text") {
+    const textEl = el.querySelector(".text-content");
+    textEl.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      textEl.setAttribute("contenteditable", "true");
+      el.classList.add("editing");
+      textEl.focus();
+      document.execCommand("selectAll", false, null);
+    });
+    textEl.addEventListener("blur", async () => {
+      textEl.removeAttribute("contenteditable");
+      el.classList.remove("editing");
+      const content = textEl.textContent.trim() || "Double-click to edit";
+      textEl.textContent = content;
+      await updateItemContent(item.id, content);
+    });
+    textEl.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") textEl.blur();
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        textEl.blur();
+      }
+    });
+  }
+
   makeDraggable(el, item, canvas);
   makeResizable(el, item, canvas);
+}
+
+function toHexColor(color) {
+  // <input type="color"> requires a #rrggbb value; fall back to the accent color.
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#d97757";
 }
 
 function makeDraggable(el, item, canvas) {
@@ -432,7 +542,13 @@ function makeDraggable(el, item, canvas) {
   let startX, startY, origX, origY;
 
   el.addEventListener("pointerdown", (e) => {
-    if (e.target.classList.contains("resize-handle") || e.target.classList.contains("item-remove")) return;
+    if (
+      e.target.classList.contains("resize-handle") ||
+      e.target.classList.contains("item-remove") ||
+      e.target.classList.contains("item-color") ||
+      e.target.classList.contains("color-input")
+    ) return;
+    if (el.classList.contains("editing")) return;
     dragging = true;
     startX = e.clientX;
     startY = e.clientY;
