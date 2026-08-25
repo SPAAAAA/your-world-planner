@@ -70,7 +70,7 @@ function greeting(name) {
 
 // ---------------- Navigation ----------------
 
-const views = ["today", "upcoming", "notes", "clients", "moodboards"];
+const views = ["today", "upcoming", "notes", "clients", "moodboards", "network"];
 
 document.querySelectorAll(".nav button").forEach((btn) => {
   btn.addEventListener("click", () => switchView(btn.dataset.view));
